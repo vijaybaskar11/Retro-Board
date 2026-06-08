@@ -183,7 +183,7 @@ function App() {
   };
 
   const resetBoard = async () => {
-    if (!confirm('Reset the board? All cards will be cleared.')) return;
+    const pwd = prompt('Enter admin password to reset the board:'); if (pwd !== 'enlight@retro') { notify('Incorrect password', 'error'); return; }
     const fresh = emptyBoard();
     setBoard(fresh); await save(fresh);
     notify('Board reset');
