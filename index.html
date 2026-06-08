@@ -39,7 +39,6 @@ const COLUMNS = [
   { id: "improve",     title: "What Could Be Improved", icon: "ti-alert-triangle", color: "#D85A30", bg: "#fff0ea", tc: "#7a2a10" },
   { id: "suggestions", title: "Suggestions / Ideas",    icon: "ti-bulb",           color: "#185FA5", bg: "#e8f0fe", tc: "#0d3a78" },
   { id: "actions",     title: "Action Items",           icon: "ti-checkbox",       color: "#BA7517", bg: "#fff8e6", tc: "#6b3c00" },
-  { id: "shoutouts",   title: "Shoutouts",              icon: "ti-heart",          color: "#993556", bg: "#fceef4", tc: "#5c1a34" },
 ];
 
 const uid = () => Math.random().toString(36).substr(2, 9);
@@ -62,7 +61,7 @@ const emptyBoard = () => ({
   desc: "Reflect on the P2 release cycle — celebrating wins, identifying improvements, and defining action items.",
   sprintTag: "P2 Release",
   createdAt: new Date().toISOString(),
-  cards: { went_well: [], improve: [], suggestions: [], actions: [], shoutouts: [] },
+  cards: { went_well: [], improve: [], suggestions: [], actions: [],  },
   votes: {}, reactions: {}, comments: {},
 });
 
