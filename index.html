@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.4.0/dist/tabler-icons.min.css" />
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --bg: #f4f5f7; --surface: #ffffff; --surface2: #f8f9fa; --border: rgba(0,0,0,0.1); --text: #1a1a2e; --text2: #5a6272; --accent: #FC6D26; --radius: 10px; --radius-sm: 7px; }
+  :root { --bg: #f4f5f7; --surface: #ffffff; --surface2: #f8f9fa; --border: rgba(0,0,0,0.1); --text: #1a1a2e; --accent: #FC6D26; --radius-sm: 7px; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
   input, textarea, select { font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; outline: none; width: 100%; }
   input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(252,109,38,0.12); }
@@ -24,17 +24,14 @@
 <body>
 <div id="root"></div>
 <script>
-  // Token injected via GitHub Actions — do not hardcode here
-  window.__GITLAB_TOKEN__ = "%%GITLAB_TOKEN%%";
+  window.__BIN_ID__ = "6a26ab2af5f4af5e29caede5";
+  window.__BIN_KEY__ = "$2a$10$HqmzhdqG3Ep5d7dxqPfRz.OobHmdu8K9fUecqLgWxBPHI/LS4kH4.";
 </script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-const GITLAB_URL = "https://git.enlight.dev";
-const PROJECT_ID = "enlight360containers%2Fretro-board";
-const TOKEN = window.__GITLAB_TOKEN__;
-const DATA_FILE = "retro-data.json";
-const BRANCH = "main";
+const BIN_URL = `https://api.jsonbin.io/v3/b/${window.__BIN_ID__}`;
+const HEADERS = { "Content-Type": "application/json", "X-Master-Key": window.__BIN_KEY__ };
 const POLL_INTERVAL = 5000;
 
 const COLUMNS = [
@@ -46,30 +43,17 @@ const COLUMNS = [
 ];
 
 const uid = () => Math.random().toString(36).substr(2, 9);
-const apiHeaders = { "PRIVATE-TOKEN": TOKEN, "Content-Type": "application/json" };
 
-async function fetchBoardData() {
-  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`, { headers: { "PRIVATE-TOKEN": TOKEN } });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error("Failed to fetch board data");
+async function fetchBoard() {
+  const res = await fetch(`${BIN_URL}/latest`, { headers: { "X-Master-Key": window.__BIN_KEY__ } });
+  if (!res.ok) throw new Error("Failed to fetch");
   const data = await res.json();
-  return JSON.parse(atob(data.content));
+  return data.record;
 }
 
-async function getFileSha() {
-  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`, { headers: { "PRIVATE-TOKEN": TOKEN } });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.last_commit_id;
-}
-
-async function saveBoardData(boardData, sha, message = "Update retro board") {
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(boardData, null, 2))));
-  const method = sha ? "PUT" : "POST";
-  const body = { branch: BRANCH, content, commit_message: message };
-  if (sha) body.last_commit_id = sha;
-  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}`, { method, headers: apiHeaders, body: JSON.stringify(body) });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.message || "Save failed"); }
+async function saveBoard(board) {
+  const res = await fetch(BIN_URL, { method: "PUT", headers: HEADERS, body: JSON.stringify(board) });
+  if (!res.ok) throw new Error("Failed to save");
   return res.json();
 }
 
@@ -82,25 +66,20 @@ const emptyBoard = () => ({
   votes: {}, reactions: {}, comments: {},
 });
 
-function GitLabLogo({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{flexShrink:0}}>
-      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L22.95 13.45a.84.84 0 01-.3.94z" fill="#FC6D26"/>
-    </svg>
-  );
+function Spinner() {
+  return <div style={{width:16,height:16,border:'2px solid rgba(0,0,0,0.1)',borderTop:'2px solid #FC6D26',borderRadius:'50%',animation:'spin 0.7s linear infinite',display:'inline-block'}}/>;
 }
 
 function Notif({ msg, type, onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, []);
   return (
-    <div style={{position:'fixed',top:18,right:18,zIndex:9999,padding:'10px 18px',borderRadius:10,background:type==='error'?'#fdecea':'#e6f9f0',color:type==='error'?'#c0392b':'#0a6640',border:`1px solid ${type==='error'?'#f5c6c6':'#b2dfcf'}`,boxShadow:'0 4px 20px rgba(0,0,0,0.12)',fontSize:14,fontWeight:500,display:'flex',alignItems:'center',gap:8}}>
+    <div style={{position:'fixed',top:18,right:18,zIndex:9999,padding:'10px 18px',borderRadius:10,
+      background:type==='error'?'#fdecea':'#e6f9f0',color:type==='error'?'#c0392b':'#0a6640',
+      border:`1px solid ${type==='error'?'#f5c6c6':'#b2dfcf'}`,boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
+      fontSize:14,fontWeight:500,display:'flex',alignItems:'center',gap:8}}>
       <i className={`ti ${type==='error'?'ti-alert-circle':'ti-circle-check'}`}/>{msg}
     </div>
   );
-}
-
-function Spinner() {
-  return <div style={{width:16,height:16,border:'2px solid rgba(0,0,0,0.1)',borderTop:'2px solid #FC6D26',borderRadius:'50%',animation:'spin 0.7s linear infinite',display:'inline-block'}}/>;
 }
 
 function Badge({ children, bg, color }) {
@@ -119,9 +98,7 @@ function App() {
   const [newText, setNewText] = useState({});
   const [expandedCard, setExpandedCard] = useState(null);
   const [commentInput, setCommentInput] = useState({});
-  const [creatingIssue, setCreatingIssue] = useState({});
   const [activeTab, setActiveTab] = useState('board');
-  const [savingBoard, setSavingBoard] = useState(false);
   const saveLock = useRef(false);
 
   const notify = (msg, type='success') => setNotif({msg,type});
@@ -129,14 +106,9 @@ function App() {
   const loadBoard = useCallback(async (silent=false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchBoardData();
-      if (data) { setBoard(data); }
-      else {
-        const fresh = emptyBoard();
-        const sha = await getFileSha();
-        await saveBoardData(fresh, sha, "Initialize retro board");
-        setBoard(fresh);
-      }
+      const data = await fetchBoard();
+      if (data && data.cards) setBoard(data);
+      else { const fresh = emptyBoard(); await saveBoard(fresh); setBoard(fresh); }
       setLastSync(new Date());
     } catch(e) { if (!silent) notify('Failed to load: '+e.message, 'error'); }
     if (!silent) setLoading(false);
@@ -150,45 +122,46 @@ function App() {
     }
   }, [joined]);
 
-  const save = async (updated, msg) => {
+  const save = async (updated, silent=false) => {
     if (saveLock.current) return;
-    saveLock.current = true; setSyncing(true);
+    saveLock.current = true;
+    if (!silent) setSyncing(true);
     try {
-      const sha = await getFileSha();
-      await saveBoardData(updated, sha, msg || `Update by ${userName}`);
+      await saveBoard(updated);
       setLastSync(new Date());
     } catch(e) { notify('Sync failed: '+e.message, 'error'); }
-    setSyncing(false); saveLock.current = false;
+    if (!silent) setSyncing(false);
+    saveLock.current = false;
   };
 
   const addCard = async (colId) => {
     const text = newText[colId]?.trim(); if (!text) return;
-    const card = { id:uid(), text, author:userName, createdAt:new Date().toISOString(), assignee:'', dueDate:'', gitlabIssueUrl:'', gitlabIssueId:null, isActionItem:colId==='actions', status:'open' };
+    const card = { id:uid(), text, author:userName, createdAt:new Date().toISOString(), assignee:'', dueDate:'', isActionItem:colId==='actions', status:'open' };
     const updated = {...board, cards:{...board.cards,[colId]:[...board.cards[colId],card]}};
     setBoard(updated); setNewText(p=>({...p,[colId]:''}));
-    await save(updated, `${userName} added a card`);
+    await save(updated);
   };
 
   const deleteCard = async (colId, cardId) => {
     const updated = {...board, cards:{...board.cards,[colId]:board.cards[colId].filter(c=>c.id!==cardId)}};
     setBoard(updated); if (expandedCard===cardId) setExpandedCard(null);
-    await save(updated, `${userName} deleted a card`);
+    await save(updated);
   };
 
   const updateCard = async (colId, cardId, upd) => {
     const updated = {...board, cards:{...board.cards,[colId]:board.cards[colId].map(c=>c.id===cardId?{...c,...upd}:c)}};
-    setBoard(updated); await save(updated, `${userName} updated a card`);
+    setBoard(updated); await save(updated);
   };
 
   const toggleVote = async (cardId) => {
     const updated = {...board, votes:{...board.votes,[cardId]:(board.votes[cardId]||0)+1}};
-    setBoard(updated); await save(updated, `${userName} voted`);
+    setBoard(updated); await save(updated);
   };
 
   const addReaction = async (cardId, emoji) => {
     const curr = board.reactions[cardId]||{};
     const updated = {...board, reactions:{...board.reactions,[cardId]:{...curr,[emoji]:(curr[emoji]||0)+1}}};
-    setBoard(updated); await save(updated, `${userName} reacted`);
+    setBoard(updated); await save(updated);
   };
 
   const addComment = async (cardId) => {
@@ -196,42 +169,24 @@ function App() {
     const comment = {id:uid(),text,author:userName,ts:new Date().toISOString()};
     const updated = {...board, comments:{...board.comments,[cardId]:[...(board.comments[cardId]||[]),comment]}};
     setBoard(updated); setCommentInput(p=>({...p,[cardId]:''}));
-    await save(updated, `${userName} commented`);
+    await save(updated);
   };
 
-  const createGitlabIssue = async (colId, card) => {
-    setCreatingIssue(p=>({...p,[card.id]:true}));
-    try {
-      const col = COLUMNS.find(c=>c.id===colId);
-      const labels = `retro,${board.sprintTag.toLowerCase().replace(/\s+/g,'-')}`;
-      const desc = `**Retro Board:** ${board.name}\n**Sprint/Release:** ${board.sprintTag}\n**Column:** ${col?.title}\n**Added by:** ${card.author}\n\n${card.text}${card.assignee?`\n\n**Assigned to:** ${card.assignee}`:''}${card.dueDate?`\n**Due:** ${card.dueDate}`:''}`;
-      const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/issues`, {
-        method:'POST', headers:apiHeaders,
-        body:JSON.stringify({title:card.text.length>80?card.text.slice(0,80)+'…':card.text,description:desc,labels})
-      });
-      if (!res.ok) throw new Error('Failed to create issue');
-      const issue = await res.json();
-      await updateCard(colId, card.id, {gitlabIssueUrl:issue.web_url,gitlabIssueId:issue.iid,status:'in_progress'});
-      notify(`GitLab issue #${issue.iid} created`);
-    } catch(e) { notify('Failed: '+e.message,'error'); }
-    setCreatingIssue(p=>({...p,[card.id]:false}));
+  const exportSummary = () => {
+    const md = `# ${board.name}\n\n> ${board.desc}\n\n**Sprint/Release:** ${board.sprintTag}\n**Date:** ${new Date().toLocaleDateString()}\n\n---\n\n${COLUMNS.map(col=>`## ${col.title}\n\n${board.cards[col.id].length===0?'_No items_':board.cards[col.id].map(c=>`- ${c.text} — ${c.author}${c.assignee?` (Assignee: ${c.assignee})`:''}${c.dueDate?` (Due: ${c.dueDate})`:''}${c.status&&c.status!=='open'?` [${c.status}]`:''}`).join('\n')}`).join('\n\n')}\n\n---\n_Generated by Retro Board_`;
+    const blob = new Blob([md], {type:'text/markdown'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${board.sprintTag.replace(/\s+/g,'-').toLowerCase()}-retro.md`;
+    a.click(); URL.revokeObjectURL(url);
+    notify('Summary downloaded!');
   };
 
-  const saveSummary = async () => {
-    setSavingBoard(true);
-    try {
-      const md = `# ${board.name}\n\n> ${board.desc}\n\n**Sprint/Release:** ${board.sprintTag}  \n**Date:** ${new Date().toLocaleDateString()}\n\n---\n\n${COLUMNS.map(col=>`## ${col.title}\n\n${board.cards[col.id].length===0?'_No items_':board.cards[col.id].map(c=>`- ${c.text}${c.gitlabIssueUrl?` ([#${c.gitlabIssueId}](${c.gitlabIssueUrl}))`:''}${c.assignee?` — @${c.assignee}`:''}`).join('\n')}`).join('\n\n')}\n\n---\n_Generated by Retro Board_`;
-      const filename = `retros/${board.sprintTag.replace(/\s+/g,'-').toLowerCase()}-summary.md`;
-      const content = btoa(unescape(encodeURIComponent(md)));
-      const checkRes = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${encodeURIComponent(filename)}?ref=${BRANCH}`, {headers:{"PRIVATE-TOKEN":TOKEN}});
-      const method = checkRes.ok ? 'PUT' : 'POST';
-      const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${encodeURIComponent(filename)}`, {
-        method, headers:apiHeaders, body:JSON.stringify({branch:BRANCH,content,commit_message:`Add retro summary: ${board.name}`})
-      });
-      if (!res.ok) throw new Error('Save failed');
-      notify('Summary saved to GitLab');
-    } catch(e) { notify('Save failed: '+e.message,'error'); }
-    setSavingBoard(false);
+  const resetBoard = async () => {
+    if (!confirm('Reset the board? All cards will be cleared.')) return;
+    const fresh = emptyBoard();
+    setBoard(fresh); await save(fresh);
+    notify('Board reset');
   };
 
   const joinBoard = () => {
@@ -243,40 +198,42 @@ function App() {
   if (!joined) return (
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'2rem',background:'linear-gradient(135deg,#fff5f0 0%,#f4f5f7 60%)'}}>
       <div style={{width:'100%',maxWidth:400,textAlign:'center'}}>
-        <div style={{width:56,height:56,borderRadius:16,background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',boxShadow:'0 8px 24px rgba(252,109,38,0.3)'}}>
-          <i className="ti ti-layout-kanban" style={{fontSize:28,color:'#fff'}}/>
+        <div style={{width:60,height:60,borderRadius:18,background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px',boxShadow:'0 8px 24px rgba(252,109,38,0.3)'}}>
+          <i className="ti ti-layout-kanban" style={{fontSize:30,color:'#fff'}}/>
         </div>
-        <h1 style={{fontSize:24,fontWeight:700,marginBottom:6}}>Retro Board</h1>
+        <h1 style={{fontSize:26,fontWeight:700,marginBottom:6}}>Retro Board</h1>
         <p style={{fontSize:14,color:'#888',marginBottom:'2rem'}}>enlight360containers · Real-time collaborative</p>
-        <div style={{background:'#fff',borderRadius:14,padding:'1.5rem',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
+        <div style={{background:'#fff',borderRadius:16,padding:'1.75rem',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
           <label style={{fontSize:13,fontWeight:600,color:'#444',display:'block',marginBottom:8,textAlign:'left'}}>Enter your name to join</label>
-          <input value={nameInput} onChange={e=>setNameInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&joinBoard()} placeholder="e.g. John, Sarah..." style={{marginBottom:12,fontSize:15,padding:'10px 14px'}} autoFocus/>
-          <button onClick={joinBoard} style={{width:'100%',padding:'11px',fontSize:15,fontWeight:600,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10,boxShadow:'0 4px 16px rgba(252,109,38,0.3)'}}>
+          <input value={nameInput} onChange={e=>setNameInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&joinBoard()} placeholder="e.g. John, Sarah..." style={{marginBottom:14,fontSize:15,padding:'11px 14px'}} autoFocus/>
+          <button onClick={joinBoard} disabled={!nameInput.trim()} style={{width:'100%',padding:'12px',fontSize:15,fontWeight:600,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10,boxShadow:'0 4px 16px rgba(252,109,38,0.3)'}}>
             Join Board →
           </button>
         </div>
+        <p style={{fontSize:12,color:'#bbb',marginTop:16}}>Share this link with your team to collaborate in real time</p>
       </div>
     </div>
   );
 
   if (loading) return (
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:16}}>
-      <Spinner/><p style={{fontSize:14,color:'#888'}}>Loading retro board from GitLab…</p>
+      <Spinner/><p style={{fontSize:14,color:'#888'}}>Loading retro board…</p>
     </div>
   );
 
   const allActions = board ? COLUMNS.flatMap(col=>board.cards[col.id].filter(c=>c.isActionItem||col.id==='actions').map(c=>({...c,colId:col.id}))) : [];
   const totalCards = board ? Object.values(board.cards).flat().length : 0;
-  const linkedIssues = board ? Object.values(board.cards).flat().filter(c=>c.gitlabIssueUrl).length : 0;
 
   return (
     <div style={{minHeight:'100vh',background:'var(--bg)'}}>
       {notif && <Notif msg={notif.msg} type={notif.type} onDone={()=>setNotif(null)}/>}
+
+      {/* Header */}
       <div style={{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.08)',padding:'0 1.5rem',position:'sticky',top:0,zIndex:100,boxShadow:'0 1px 8px rgba(0,0,0,0.05)'}}>
-        <div style={{maxWidth:1400,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-between',height:54}}>
+        <div style={{maxWidth:1500,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-between',height:56}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{width:34,height:34,borderRadius:9,background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <i className="ti ti-layout-kanban" style={{fontSize:18,color:'#fff'}}/>
+            <div style={{width:36,height:36,borderRadius:10,background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <i className="ti ti-layout-kanban" style={{fontSize:19,color:'#fff'}}/>
             </div>
             <span style={{fontSize:15,fontWeight:600}}>{board?.name}</span>
             <Badge bg="#fff5f0" color="#b84800">{board?.sprintTag}</Badge>
@@ -285,16 +242,18 @@ function App() {
             <span style={{fontSize:12,color:'#aaa',display:'flex',alignItems:'center',gap:5}}>
               {syncing ? <><Spinner/> Syncing…</> : lastSync ? <>🟢 {lastSync.toLocaleTimeString()}</> : null}
             </span>
-            <div style={{width:30,height:30,borderRadius:'50%',background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,fontWeight:600}}>{userName[0]?.toUpperCase()}</div>
+            <div style={{width:32,height:32,borderRadius:'50%',background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,fontWeight:700}}>{userName[0]?.toUpperCase()}</div>
             <span style={{fontSize:13,fontWeight:500}}>{userName}</span>
+            <button onClick={resetBoard} style={{fontSize:12,padding:'5px 10px',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)'}}>Reset</button>
             <button onClick={()=>{localStorage.removeItem('retro_username');setJoined(false);setUserName('');setBoard(null);setLoading(true);}} style={{fontSize:12,padding:'5px 10px',color:'#888'}}>Leave</button>
           </div>
         </div>
       </div>
 
-      <div style={{maxWidth:1400,margin:'0 auto',padding:'1.25rem 1.5rem'}}>
+      <div style={{maxWidth:1500,margin:'0 auto',padding:'1.25rem 1.5rem'}}>
+        {/* Stats */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:'1.25rem'}}>
-          {[{l:'Total cards',v:totalCards,i:'ti-cards'},{l:'Action items',v:allActions.length,i:'ti-checkbox'},{l:'GitLab issues',v:linkedIssues,i:'ti-brand-gitlab'},{l:'Live sync',v:'ON',i:'ti-refresh'}].map(s=>(
+          {[{l:'Total cards',v:totalCards,i:'ti-cards'},{l:'Action items',v:allActions.length,i:'ti-checkbox'},{l:'Columns',v:5,i:'ti-layout-columns'},{l:'Live sync',v:'ON',i:'ti-refresh'}].map(s=>(
             <div key={s.l} style={{background:'#fff',borderRadius:10,padding:'12px 16px',border:'1px solid rgba(0,0,0,0.07)',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><i className={`ti ${s.i}`} style={{fontSize:15,color:'#FC6D26'}}/><span style={{fontSize:12,color:'#888'}}>{s.l}</span></div>
               <span style={{fontSize:22,fontWeight:700}}>{s.v}</span>
@@ -302,6 +261,7 @@ function App() {
           ))}
         </div>
 
+        {/* Tabs */}
         <div style={{display:'flex',gap:2,marginBottom:'1.25rem',borderBottom:'2px solid rgba(0,0,0,0.07)'}}>
           {[{id:'board',l:'Board',i:'ti-layout-kanban'},{id:'actions',l:'Action items',i:'ti-checkbox'},{id:'summary',l:'Summary',i:'ti-file-description'}].map(t=>(
             <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{fontSize:13,padding:'9px 18px',border:'none',borderBottom:activeTab===t.id?'2px solid #FC6D26':'2px solid transparent',borderRadius:0,background:'transparent',color:activeTab===t.id?'#FC6D26':'#666',cursor:'pointer',fontWeight:activeTab===t.id?600:400,display:'flex',alignItems:'center',gap:6,marginBottom:'-2px'}}>
@@ -310,6 +270,7 @@ function App() {
           ))}
         </div>
 
+        {/* Board */}
         {activeTab==='board' && board && (
           <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
             {COLUMNS.map(col=>(
@@ -319,19 +280,23 @@ function App() {
                   <span style={{fontSize:13,fontWeight:600,flex:1,color:col.tc}}>{col.title}</span>
                   <span style={{fontSize:11,padding:'1px 8px',borderRadius:20,background:'rgba(255,255,255,0.7)',color:col.tc,fontWeight:600}}>{board.cards[col.id].length}</span>
                 </div>
-                <div style={{padding:10,display:'flex',flexDirection:'column',gap:7,minHeight:100}}>
+                <div style={{padding:10,display:'flex',flexDirection:'column',gap:7,minHeight:120}}>
                   {board.cards[col.id].map(card=>(
-                    <CardItem key={card.id} card={card} col={col} votes={board.votes} reactions={board.reactions} comments={board.comments} commentInput={commentInput} expandedCard={expandedCard} creatingIssue={creatingIssue} userName={userName}
-                      onVote={()=>toggleVote(card.id)} onReact={e=>addReaction(card.id,e)} onDelete={()=>deleteCard(col.id,card.id)}
+                    <CardItem key={card.id} card={card} col={col}
+                      votes={board.votes} reactions={board.reactions} comments={board.comments}
+                      commentInput={commentInput} expandedCard={expandedCard} userName={userName}
+                      onVote={()=>toggleVote(card.id)} onReact={e=>addReaction(card.id,e)}
+                      onDelete={()=>deleteCard(col.id,card.id)}
                       onExpand={()=>setExpandedCard(expandedCard===card.id?null:card.id)}
-                      onCommentChange={v=>setCommentInput(p=>({...p,[card.id]:v}))} onAddComment={()=>addComment(card.id)}
-                      onCreateIssue={()=>createGitlabIssue(col.id,card)} onUpdate={u=>updateCard(col.id,card.id,u)}
+                      onCommentChange={v=>setCommentInput(p=>({...p,[card.id]:v}))}
+                      onAddComment={()=>addComment(card.id)}
+                      onUpdate={u=>updateCard(col.id,card.id,u)}
                       onMarkAction={()=>updateCard(col.id,card.id,{isActionItem:!card.isActionItem})}
                     />
                   ))}
-                  <div style={{display:'flex',gap:5,marginTop:2}}>
+                  <div style={{display:'flex',gap:5,marginTop:'auto',paddingTop:4}}>
                     <input value={newText[col.id]||''} onChange={e=>setNewText(p=>({...p,[col.id]:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&addCard(col.id)} placeholder="Add a card…" style={{flex:1,fontSize:12,padding:'6px 9px'}}/>
-                    <button onClick={()=>addCard(col.id)} style={{padding:'6px 10px'}}><i className="ti ti-plus" style={{fontSize:13}}/></button>
+                    <button onClick={()=>addCard(col.id)} style={{padding:'6px 10px'}} aria-label="Add"><i className="ti ti-plus" style={{fontSize:13}}/></button>
                   </div>
                 </div>
               </div>
@@ -339,18 +304,19 @@ function App() {
           </div>
         )}
 
+        {/* Actions */}
         {activeTab==='actions' && board && (
           <div>
             {allActions.length===0 ? (
-              <div style={{textAlign:'center',padding:'4rem',color:'#aaa'}}>
-                <i className="ti ti-checkbox" style={{fontSize:40,display:'block',marginBottom:10}}/>
-                <p style={{fontSize:14}}>No action items yet.</p>
+              <div style={{textAlign:'center',padding:'4rem',color:'#bbb'}}>
+                <i className="ti ti-checkbox" style={{fontSize:44,display:'block',marginBottom:12}}/>
+                <p style={{fontSize:14}}>No action items yet. Add cards to the Action Items column or mark any card as an action item.</p>
               </div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 {allActions.map(card=>(
-                  <ActionRow key={card.id} card={card} col={COLUMNS.find(c=>c.id===card.colId)} creatingIssue={creatingIssue}
-                    onCreateIssue={()=>createGitlabIssue(card.colId,card)} onUpdate={u=>updateCard(card.colId,card.id,u)}
+                  <ActionRow key={card.id} card={card} col={COLUMNS.find(c=>c.id===card.colId)}
+                    onUpdate={u=>updateCard(card.colId,card.id,u)}
                   />
                 ))}
               </div>
@@ -358,33 +324,41 @@ function App() {
           </div>
         )}
 
+        {/* Summary */}
         {activeTab==='summary' && board && (
           <div style={{maxWidth:700}}>
-            <div style={{background:'#fff',borderRadius:12,padding:'1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:12}}>
+            <div style={{background:'#fff',borderRadius:12,padding:'1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:12,boxShadow:'0 1px 6px rgba(0,0,0,0.05)'}}>
               <h2 style={{fontSize:17,fontWeight:700,marginBottom:4}}>{board.name}</h2>
               <p style={{fontSize:13,color:'#666',marginBottom:10}}>{board.desc}</p>
-              <div style={{display:'flex',gap:7}}><Badge bg="#fff5f0" color="#b84800">{board.sprintTag}</Badge><Badge bg="#f4f5f7" color="#555">{new Date().toLocaleDateString()}</Badge></div>
+              <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+                <Badge bg="#fff5f0" color="#b84800">{board.sprintTag}</Badge>
+                <Badge bg="#f4f5f7" color="#555">{new Date().toLocaleDateString()}</Badge>
+                <Badge bg="#e8f0fe" color="#0d3a78">{totalCards} cards</Badge>
+                <Badge bg="#fff8e6" color="#6b3c00">{allActions.length} action items</Badge>
+              </div>
             </div>
             {COLUMNS.map(col=>(
-              <div key={col.id} style={{background:'#fff',borderRadius:12,padding:'1rem 1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:10}}>
+              <div key={col.id} style={{background:'#fff',borderRadius:12,padding:'1rem 1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:10,boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
                   <i className={`ti ${col.icon}`} style={{color:col.color,fontSize:15}}/>
                   <span style={{fontSize:14,fontWeight:600}}>{col.title}</span>
-                  <span style={{fontSize:12,color:'#999'}}>({board.cards[col.id].length})</span>
+                  <span style={{fontSize:12,color:'#aaa'}}>({board.cards[col.id].length})</span>
                 </div>
-                {board.cards[col.id].length===0 ? <p style={{fontSize:13,color:'#aaa'}}>No items</p> : (
+                {board.cards[col.id].length===0 ? <p style={{fontSize:13,color:'#bbb'}}>No items</p> : (
                   <ul style={{paddingLeft:18,display:'flex',flexDirection:'column',gap:6}}>
                     {board.cards[col.id].map(c=>(
-                      <li key={c.id} style={{fontSize:13,lineHeight:1.5}}>{c.text} <span style={{fontSize:11,color:'#aaa'}}>— {c.author}</span>
-                        {c.gitlabIssueUrl && <a href={c.gitlabIssueUrl} target="_blank" rel="noopener" style={{marginLeft:8,fontSize:12}}>#{c.gitlabIssueId}</a>}
+                      <li key={c.id} style={{fontSize:13,lineHeight:1.6}}>
+                        {c.text} <span style={{fontSize:11,color:'#aaa'}}>— {c.author}</span>
+                        {c.assignee && <span style={{fontSize:11,color:'#888',marginLeft:6}}>→ {c.assignee}</span>}
+                        {c.dueDate && <span style={{fontSize:11,color:'#888',marginLeft:6}}>📅 {c.dueDate}</span>}
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
             ))}
-            <button onClick={saveSummary} disabled={savingBoard} style={{width:'100%',padding:'11px',fontSize:14,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10}}>
-              <GitLabLogo size={16}/>{savingBoard?'Saving…':'Save summary to GitLab'}
+            <button onClick={exportSummary} style={{width:'100%',padding:'12px',fontSize:14,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10,boxShadow:'0 4px 16px rgba(252,109,38,0.25)'}}>
+              <i className="ti ti-download" style={{fontSize:16}}/>Download summary as Markdown
             </button>
           </div>
         )}
@@ -393,21 +367,21 @@ function App() {
   );
 }
 
-function CardItem({ card, col, votes, reactions, comments, commentInput, expandedCard, creatingIssue, onVote, onReact, onDelete, onExpand, onCommentChange, onAddComment, onCreateIssue, onUpdate, onMarkAction, userName }) {
+function CardItem({ card, col, votes, reactions, comments, commentInput, expandedCard, userName, onVote, onReact, onDelete, onExpand, onCommentChange, onAddComment, onUpdate, onMarkAction }) {
   const isExp = expandedCard===card.id;
   const vc = votes[card.id]||0;
   const cr = reactions[card.id]||{};
   const cc = comments[card.id]||[];
   const EMOJIS = ['👍','❤️','💡','🎉','🤔'];
   return (
-    <div style={{background:'#fff',borderRadius:8,border:'1px solid rgba(0,0,0,0.08)',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+    <div style={{background:'#fff',borderRadius:8,border:'1px solid rgba(0,0,0,0.08)',overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
       <div style={{padding:'9px 11px'}}>
         <p style={{fontSize:13,lineHeight:1.55,marginBottom:7}}>{card.text}</p>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6}}>
           <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
-            <span style={{fontSize:11,color:'#999'}}>{card.author}</span>
+            <span style={{fontSize:11,color:'#aaa'}}>{card.author}</span>
             {card.isActionItem && <span style={{fontSize:10,padding:'1px 6px',borderRadius:20,background:'#fff8e6',color:'#6b3c00',fontWeight:500}}>action</span>}
-            {card.gitlabIssueUrl && <a href={card.gitlabIssueUrl} target="_blank" rel="noopener" style={{fontSize:11,padding:'1px 6px',borderRadius:20,background:'#e6f9f0',color:'#0a5a38',textDecoration:'none',fontWeight:500}}>#{card.gitlabIssueId}</a>}
+            {card.status==='done' && <span style={{fontSize:10,padding:'1px 6px',borderRadius:20,background:'#e6f9f0',color:'#0a5a38',fontWeight:500}}>done</span>}
           </div>
           <div style={{display:'flex',gap:3}}>
             <button onClick={onVote} style={{fontSize:11,padding:'2px 8px',display:'flex',alignItems:'center',gap:3}}><i className="ti ti-arrow-up" style={{fontSize:11}}/>{vc}</button>
@@ -431,23 +405,18 @@ function CardItem({ card, col, votes, reactions, comments, commentInput, expande
             <input type="date" value={card.dueDate||''} onChange={e=>onUpdate({dueDate:e.target.value})} style={{flex:1,fontSize:12,padding:'5px 8px'}}/>
           </div>
           <div style={{display:'flex',gap:6}}>
-            <button onClick={onMarkAction} style={{flex:1,fontSize:12,padding:'5px 0',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
+            <button onClick={onMarkAction} style={{flex:1,fontSize:12,padding:'6px 0',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
               <i className={`ti ${card.isActionItem?'ti-checkbox':'ti-square'}`} style={{fontSize:13}}/>{card.isActionItem?'Remove action':'Mark as action'}
             </button>
-            {!card.gitlabIssueUrl ? (
-              <button onClick={onCreateIssue} disabled={creatingIssue[card.id]} style={{flex:1,fontSize:12,padding:'5px 0',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L22.95 13.45a.84.84 0 01-.3.94z" fill="#FC6D26"/></svg>
-                {creatingIssue[card.id]?'Creating...':'Create GitLab issue'}
-              </button>
-            ) : (
-              <a href={card.gitlabIssueUrl} target="_blank" rel="noopener" style={{flex:1,fontSize:12,padding:'5px 0',textAlign:'center',textDecoration:'none',border:'1px solid rgba(0,0,0,0.1)',borderRadius:7,color:'#1a1a2e',display:'flex',alignItems:'center',justifyContent:'center',gap:5,background:'#fff'}}>
-                View #{card.gitlabIssueId}
-              </a>
-            )}
+            <select value={card.status||'open'} onChange={e=>onUpdate({status:e.target.value})} style={{flex:1,fontSize:12,padding:'5px 8px'}}>
+              <option value="open">Open</option>
+              <option value="in_progress">In progress</option>
+              <option value="done">Done</option>
+            </select>
           </div>
           {cc.length>0 && (
             <div style={{display:'flex',flexDirection:'column',gap:5}}>
-              {cc.map(c=><div key={c.id} style={{fontSize:12,padding:'6px 9px',background:'#fff',borderRadius:7,border:'1px solid rgba(0,0,0,0.07)'}}><span style={{color:'#999',marginRight:6,fontWeight:500}}>{c.author}:</span>{c.text}</div>)}
+              {cc.map(c=><div key={c.id} style={{fontSize:12,padding:'6px 9px',background:'#fff',borderRadius:7,border:'1px solid rgba(0,0,0,0.07)'}}><span style={{color:'#aaa',marginRight:6,fontWeight:500}}>{c.author}:</span>{c.text}</div>)}
             </div>
           )}
           <div style={{display:'flex',gap:6}}>
@@ -460,7 +429,7 @@ function CardItem({ card, col, votes, reactions, comments, commentInput, expande
   );
 }
 
-function ActionRow({ card, col, creatingIssue, onCreateIssue, onUpdate }) {
+function ActionRow({ card, col, onUpdate }) {
   const SC = { open:{bg:'#e8f0fe',tc:'#0d3a78'}, in_progress:{bg:'#fff8e6',tc:'#6b3c00'}, done:{bg:'#e6f9f0',tc:'#0a5a38'} };
   const s = SC[card.status]||SC.open;
   return (
@@ -475,23 +444,11 @@ function ActionRow({ card, col, creatingIssue, onCreateIssue, onUpdate }) {
           <span style={{fontSize:11,color:'#aaa'}}>by {card.author}</span>
         </div>
       </div>
-      <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
-        <select value={card.status||'open'} onChange={e=>onUpdate({status:e.target.value})} style={{fontSize:12,padding:'4px 8px',width:'auto'}}>
-          <option value="open">Open</option>
-          <option value="in_progress">In progress</option>
-          <option value="done">Done</option>
-        </select>
-        {!card.gitlabIssueUrl ? (
-          <button onClick={onCreateIssue} disabled={creatingIssue[card.id]} style={{fontSize:12,padding:'5px 11px',display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L22.95 13.45a.84.84 0 01-.3.94z" fill="#FC6D26"/></svg>
-            {creatingIssue[card.id]?'...':'Create issue'}
-          </button>
-        ) : (
-          <a href={card.gitlabIssueUrl} target="_blank" rel="noopener" style={{fontSize:12,padding:'5px 11px',textDecoration:'none',border:'1px solid rgba(0,0,0,0.1)',borderRadius:7,color:'#1a1a2e',display:'flex',alignItems:'center',gap:5,background:'#fff',whiteSpace:'nowrap'}}>
-            #{card.gitlabIssueId}
-          </a>
-        )}
-      </div>
+      <select value={card.status||'open'} onChange={e=>onUpdate({status:e.target.value})} style={{fontSize:12,padding:'5px 8px',width:'auto',flexShrink:0}}>
+        <option value="open">Open</option>
+        <option value="in_progress">In progress</option>
+        <option value="done">Done</option>
+      </select>
     </div>
   );
 }
