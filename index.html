@@ -10,27 +10,29 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.4.0/dist/tabler-icons.min.css" />
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #f4f5f7; --surface: #ffffff; --surface2: #f8f9fa; --border: rgba(0,0,0,0.1);
-    --text: #1a1a2e; --text2: #5a6272; --accent: #FC6D26; --radius: 10px; --radius-sm: 7px;
-  }
+  :root { --bg: #f4f5f7; --surface: #ffffff; --surface2: #f8f9fa; --border: rgba(0,0,0,0.1); --text: #1a1a2e; --text2: #5a6272; --accent: #FC6D26; --radius: 10px; --radius-sm: 7px; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
   input, textarea, select { font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; outline: none; width: 100%; }
   input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(252,109,38,0.12); }
   button { font-family: inherit; font-size: 13px; cursor: pointer; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 7px 14px; transition: background 0.15s; }
   button:hover { background: var(--surface2); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<script>
+  // Token injected via GitHub Actions — do not hardcode here
+  window.__GITLAB_TOKEN__ = "%%GITLAB_TOKEN%%";
+</script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
 const GITLAB_URL = "https://git.enlight.dev";
 const PROJECT_ID = "enlight360containers%2Fretro-board";
-const TOKEN = "glpat-AQiTyCLkx1t4Mqsoob48";
+const TOKEN = window.__GITLAB_TOKEN__;
 const DATA_FILE = "retro-data.json";
 const BRANCH = "main";
 const POLL_INTERVAL = 5000;
@@ -44,38 +46,31 @@ const COLUMNS = [
 ];
 
 const uid = () => Math.random().toString(36).substr(2, 9);
-
 const apiHeaders = { "PRIVATE-TOKEN": TOKEN, "Content-Type": "application/json" };
 
 async function fetchBoardData() {
-  const url = `${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`;
-  const res = await fetch(url, { headers: { "PRIVATE-TOKEN": TOKEN } });
+  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`, { headers: { "PRIVATE-TOKEN": TOKEN } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch board data");
   const data = await res.json();
   return JSON.parse(atob(data.content));
 }
 
+async function getFileSha() {
+  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`, { headers: { "PRIVATE-TOKEN": TOKEN } });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.last_commit_id;
+}
+
 async function saveBoardData(boardData, sha, message = "Update retro board") {
-  const url = `${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}`;
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(boardData, null, 2))));
   const method = sha ? "PUT" : "POST";
   const body = { branch: BRANCH, content, commit_message: message };
   if (sha) body.last_commit_id = sha;
-  const res = await fetch(url, { method, headers: apiHeaders, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.message || "Save failed");
-  }
+  const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}`, { method, headers: apiHeaders, body: JSON.stringify(body) });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.message || "Save failed"); }
   return res.json();
-}
-
-async function getFileSha() {
-  const url = `${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${DATA_FILE}?ref=${BRANCH}`;
-  const res = await fetch(url, { headers: { "PRIVATE-TOKEN": TOKEN } });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.last_commit_id;
 }
 
 const emptyBoard = () => ({
@@ -84,9 +79,7 @@ const emptyBoard = () => ({
   sprintTag: "P2 Release",
   createdAt: new Date().toISOString(),
   cards: { went_well: [], improve: [], suggestions: [], actions: [], shoutouts: [] },
-  votes: {},
-  reactions: {},
-  comments: {},
+  votes: {}, reactions: {}, comments: {},
 });
 
 function GitLabLogo({ size = 16 }) {
@@ -100,29 +93,25 @@ function GitLabLogo({ size = 16 }) {
 function Notif({ msg, type, onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, []);
   return (
-    <div style={{position:'fixed',top:18,right:18,zIndex:9999,padding:'10px 18px',borderRadius:10,
-      background: type==='error'?'#fdecea':'#e6f9f0', color: type==='error'?'#c0392b':'#0a6640',
-      border:`1px solid ${type==='error'?'#f5c6c6':'#b2dfcf'}`,boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
-      fontSize:14,fontWeight:500,display:'flex',alignItems:'center',gap:8}}>
+    <div style={{position:'fixed',top:18,right:18,zIndex:9999,padding:'10px 18px',borderRadius:10,background:type==='error'?'#fdecea':'#e6f9f0',color:type==='error'?'#c0392b':'#0a6640',border:`1px solid ${type==='error'?'#f5c6c6':'#b2dfcf'}`,boxShadow:'0 4px 20px rgba(0,0,0,0.12)',fontSize:14,fontWeight:500,display:'flex',alignItems:'center',gap:8}}>
       <i className={`ti ${type==='error'?'ti-alert-circle':'ti-circle-check'}`}/>{msg}
     </div>
   );
 }
 
 function Spinner() {
-  return <div style={{width:18,height:18,border:'2px solid rgba(0,0,0,0.1)',borderTop:'2px solid var(--accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite',display:'inline-block'}}/>;
+  return <div style={{width:16,height:16,border:'2px solid rgba(0,0,0,0.1)',borderTop:'2px solid #FC6D26',borderRadius:'50%',animation:'spin 0.7s linear infinite',display:'inline-block'}}/>;
 }
 
 function Badge({ children, bg, color }) {
   return <span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:bg,color,fontWeight:500,whiteSpace:'nowrap'}}>{children}</span>;
 }
 
-export default function App() {
+function App() {
   const [userName, setUserName] = useState(() => localStorage.getItem('retro_username') || '');
   const [nameInput, setNameInput] = useState('');
   const [joined, setJoined] = useState(!!localStorage.getItem('retro_username'));
   const [board, setBoard] = useState(null);
-  const [sha, setSha] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
@@ -134,8 +123,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('board');
   const [savingBoard, setSavingBoard] = useState(false);
   const saveLock = useRef(false);
-  const pollRef = useRef(null);
-  const localVersion = useRef(0);
 
   const notify = (msg, type='success') => setNotif({msg,type});
 
@@ -143,96 +130,72 @@ export default function App() {
     try {
       if (!silent) setLoading(true);
       const data = await fetchBoardData();
-      const fileSha = await getFileSha();
-      setSha(fileSha);
-      if (data) {
-        setBoard(data);
-      } else {
+      if (data) { setBoard(data); }
+      else {
         const fresh = emptyBoard();
+        const sha = await getFileSha();
+        await saveBoardData(fresh, sha, "Initialize retro board");
         setBoard(fresh);
-        await saveBoardData(fresh, null, "Initialize retro board");
-        const newSha = await getFileSha();
-        setSha(newSha);
       }
       setLastSync(new Date());
-    } catch(e) {
-      if (!silent) notify('Failed to load board: '+e.message, 'error');
-    }
+    } catch(e) { if (!silent) notify('Failed to load: '+e.message, 'error'); }
     if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => {
     if (joined) {
       loadBoard();
-      pollRef.current = setInterval(() => {
-        if (!saveLock.current) loadBoard(true);
-      }, POLL_INTERVAL);
-      return () => clearInterval(pollRef.current);
+      const poll = setInterval(() => { if (!saveLock.current) loadBoard(true); }, POLL_INTERVAL);
+      return () => clearInterval(poll);
     }
   }, [joined]);
 
-  const save = async (updatedBoard, msg) => {
+  const save = async (updated, msg) => {
     if (saveLock.current) return;
-    saveLock.current = true;
-    setSyncing(true);
+    saveLock.current = true; setSyncing(true);
     try {
-      const currentSha = await getFileSha();
-      await saveBoardData(updatedBoard, currentSha, msg || `Update by ${userName}`);
-      const newSha = await getFileSha();
-      setSha(newSha);
+      const sha = await getFileSha();
+      await saveBoardData(updated, sha, msg || `Update by ${userName}`);
       setLastSync(new Date());
-    } catch(e) {
-      notify('Sync failed: '+e.message, 'error');
-    }
-    setSyncing(false);
-    saveLock.current = false;
+    } catch(e) { notify('Sync failed: '+e.message, 'error'); }
+    setSyncing(false); saveLock.current = false;
   };
 
   const addCard = async (colId) => {
     const text = newText[colId]?.trim(); if (!text) return;
     const card = { id:uid(), text, author:userName, createdAt:new Date().toISOString(), assignee:'', dueDate:'', gitlabIssueUrl:'', gitlabIssueId:null, isActionItem:colId==='actions', status:'open' };
-    const updated = { ...board, cards: { ...board.cards, [colId]: [...board.cards[colId], card] } };
-    setBoard(updated);
-    setNewText(p=>({...p,[colId]:''}));
+    const updated = {...board, cards:{...board.cards,[colId]:[...board.cards[colId],card]}};
+    setBoard(updated); setNewText(p=>({...p,[colId]:''}));
     await save(updated, `${userName} added a card`);
   };
 
   const deleteCard = async (colId, cardId) => {
-    const updated = { ...board, cards: { ...board.cards, [colId]: board.cards[colId].filter(c=>c.id!==cardId) } };
-    setBoard(updated);
-    if (expandedCard===cardId) setExpandedCard(null);
+    const updated = {...board, cards:{...board.cards,[colId]:board.cards[colId].filter(c=>c.id!==cardId)}};
+    setBoard(updated); if (expandedCard===cardId) setExpandedCard(null);
     await save(updated, `${userName} deleted a card`);
   };
 
   const updateCard = async (colId, cardId, upd) => {
-    const updated = { ...board, cards: { ...board.cards, [colId]: board.cards[colId].map(c=>c.id===cardId?{...c,...upd}:c) } };
-    setBoard(updated);
-    await save(updated, `${userName} updated a card`);
+    const updated = {...board, cards:{...board.cards,[colId]:board.cards[colId].map(c=>c.id===cardId?{...c,...upd}:c)}};
+    setBoard(updated); await save(updated, `${userName} updated a card`);
   };
 
   const toggleVote = async (cardId) => {
-    const votes = { ...board.votes, [cardId]: (board.votes[cardId]||0)+1 };
-    const updated = { ...board, votes };
-    setBoard(updated);
-    await save(updated, `${userName} voted`);
+    const updated = {...board, votes:{...board.votes,[cardId]:(board.votes[cardId]||0)+1}};
+    setBoard(updated); await save(updated, `${userName} voted`);
   };
 
   const addReaction = async (cardId, emoji) => {
-    const curr = board.reactions[cardId] || {};
-    const reactions = { ...board.reactions, [cardId]: { ...curr, [emoji]: (curr[emoji]||0)+1 } };
-    const updated = { ...board, reactions };
-    setBoard(updated);
-    await save(updated, `${userName} reacted`);
+    const curr = board.reactions[cardId]||{};
+    const updated = {...board, reactions:{...board.reactions,[cardId]:{...curr,[emoji]:(curr[emoji]||0)+1}}};
+    setBoard(updated); await save(updated, `${userName} reacted`);
   };
 
   const addComment = async (cardId) => {
     const text = commentInput[cardId]?.trim(); if (!text) return;
-    const comment = { id:uid(), text, author:userName, ts:new Date().toISOString() };
-    const existing = board.comments[cardId] || [];
-    const comments = { ...board.comments, [cardId]: [...existing, comment] };
-    const updated = { ...board, comments };
-    setBoard(updated);
-    setCommentInput(p=>({...p,[cardId]:''}));
+    const comment = {id:uid(),text,author:userName,ts:new Date().toISOString()};
+    const updated = {...board, comments:{...board.comments,[cardId]:[...(board.comments[cardId]||[]),comment]}};
+    setBoard(updated); setCommentInput(p=>({...p,[cardId]:''}));
     await save(updated, `${userName} commented`);
   };
 
@@ -244,27 +207,26 @@ export default function App() {
       const desc = `**Retro Board:** ${board.name}\n**Sprint/Release:** ${board.sprintTag}\n**Column:** ${col?.title}\n**Added by:** ${card.author}\n\n${card.text}${card.assignee?`\n\n**Assigned to:** ${card.assignee}`:''}${card.dueDate?`\n**Due:** ${card.dueDate}`:''}`;
       const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/issues`, {
         method:'POST', headers:apiHeaders,
-        body:JSON.stringify({ title:card.text.length>80?card.text.slice(0,80)+'…':card.text, description:desc, labels })
+        body:JSON.stringify({title:card.text.length>80?card.text.slice(0,80)+'…':card.text,description:desc,labels})
       });
       if (!res.ok) throw new Error('Failed to create issue');
       const issue = await res.json();
-      await updateCard(colId, card.id, {gitlabIssueUrl:issue.web_url, gitlabIssueId:issue.iid, status:'in_progress'});
+      await updateCard(colId, card.id, {gitlabIssueUrl:issue.web_url,gitlabIssueId:issue.iid,status:'in_progress'});
       notify(`GitLab issue #${issue.iid} created`);
     } catch(e) { notify('Failed: '+e.message,'error'); }
     setCreatingIssue(p=>({...p,[card.id]:false}));
   };
 
-  const saveSummaryToGitlab = async () => {
+  const saveSummary = async () => {
     setSavingBoard(true);
     try {
       const md = `# ${board.name}\n\n> ${board.desc}\n\n**Sprint/Release:** ${board.sprintTag}  \n**Date:** ${new Date().toLocaleDateString()}\n\n---\n\n${COLUMNS.map(col=>`## ${col.title}\n\n${board.cards[col.id].length===0?'_No items_':board.cards[col.id].map(c=>`- ${c.text}${c.gitlabIssueUrl?` ([#${c.gitlabIssueId}](${c.gitlabIssueUrl}))`:''}${c.assignee?` — @${c.assignee}`:''}`).join('\n')}`).join('\n\n')}\n\n---\n_Generated by Retro Board_`;
       const filename = `retros/${board.sprintTag.replace(/\s+/g,'-').toLowerCase()}-summary.md`;
       const content = btoa(unescape(encodeURIComponent(md)));
-      const checkRes = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${encodeURIComponent(filename)}?ref=${BRANCH}`, { headers:{"PRIVATE-TOKEN":TOKEN} });
+      const checkRes = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${encodeURIComponent(filename)}?ref=${BRANCH}`, {headers:{"PRIVATE-TOKEN":TOKEN}});
       const method = checkRes.ok ? 'PUT' : 'POST';
       const res = await fetch(`${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/repository/files/${encodeURIComponent(filename)}`, {
-        method, headers:apiHeaders,
-        body:JSON.stringify({ branch:BRANCH, content, commit_message:`Add retro summary: ${board.name}` })
+        method, headers:apiHeaders, body:JSON.stringify({branch:BRANCH,content,commit_message:`Add retro summary: ${board.name}`})
       });
       if (!res.ok) throw new Error('Save failed');
       notify('Summary saved to GitLab');
@@ -299,40 +261,33 @@ export default function App() {
 
   if (loading) return (
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:16}}>
-      <Spinner/>
-      <p style={{fontSize:14,color:'#888'}}>Loading retro board from GitLab…</p>
+      <Spinner/><p style={{fontSize:14,color:'#888'}}>Loading retro board from GitLab…</p>
     </div>
   );
 
-  const allActions = board ? COLUMNS.flatMap(col => board.cards[col.id].filter(c=>c.isActionItem||col.id==='actions').map(c=>({...c,colId:col.id}))) : [];
+  const allActions = board ? COLUMNS.flatMap(col=>board.cards[col.id].filter(c=>c.isActionItem||col.id==='actions').map(c=>({...c,colId:col.id}))) : [];
   const totalCards = board ? Object.values(board.cards).flat().length : 0;
   const linkedIssues = board ? Object.values(board.cards).flat().filter(c=>c.gitlabIssueUrl).length : 0;
 
   return (
     <div style={{minHeight:'100vh',background:'var(--bg)'}}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       {notif && <Notif msg={notif.msg} type={notif.type} onDone={()=>setNotif(null)}/>}
-
       <div style={{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.08)',padding:'0 1.5rem',position:'sticky',top:0,zIndex:100,boxShadow:'0 1px 8px rgba(0,0,0,0.05)'}}>
         <div style={{maxWidth:1400,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-between',height:54}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <div style={{width:34,height:34,borderRadius:9,background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center'}}>
               <i className="ti ti-layout-kanban" style={{fontSize:18,color:'#fff'}}/>
             </div>
-            <div>
-              <div style={{display:'flex',alignItems:'center',gap:7}}>
-                <span style={{fontSize:15,fontWeight:600}}>{board?.name}</span>
-                <Badge bg="#fff5f0" color="#b84800">{board?.sprintTag}</Badge>
-              </div>
-            </div>
+            <span style={{fontSize:15,fontWeight:600}}>{board?.name}</span>
+            <Badge bg="#fff5f0" color="#b84800">{board?.sprintTag}</Badge>
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#888'}}>
-              {syncing ? <><Spinner/> Syncing…</> : lastSync ? <><i className="ti ti-refresh" style={{fontSize:13}}/> {lastSync.toLocaleTimeString()}</> : null}
-            </div>
+            <span style={{fontSize:12,color:'#aaa',display:'flex',alignItems:'center',gap:5}}>
+              {syncing ? <><Spinner/> Syncing…</> : lastSync ? <>🟢 {lastSync.toLocaleTimeString()}</> : null}
+            </span>
             <div style={{width:30,height:30,borderRadius:'50%',background:'#FC6D26',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,fontWeight:600}}>{userName[0]?.toUpperCase()}</div>
             <span style={{fontSize:13,fontWeight:500}}>{userName}</span>
-            <button onClick={()=>{localStorage.removeItem('retro_username');setJoined(false);setUserName('');}} style={{fontSize:12,padding:'5px 10px',color:'#888'}}>Leave</button>
+            <button onClick={()=>{localStorage.removeItem('retro_username');setJoined(false);setUserName('');setBoard(null);setLoading(true);}} style={{fontSize:12,padding:'5px 10px',color:'#888'}}>Leave</button>
           </div>
         </div>
       </div>
@@ -341,10 +296,7 @@ export default function App() {
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:'1.25rem'}}>
           {[{l:'Total cards',v:totalCards,i:'ti-cards'},{l:'Action items',v:allActions.length,i:'ti-checkbox'},{l:'GitLab issues',v:linkedIssues,i:'ti-brand-gitlab'},{l:'Live sync',v:'ON',i:'ti-refresh'}].map(s=>(
             <div key={s.l} style={{background:'#fff',borderRadius:10,padding:'12px 16px',border:'1px solid rgba(0,0,0,0.07)',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                <i className={`ti ${s.i}`} style={{fontSize:15,color:'#FC6D26'}}/>
-                <span style={{fontSize:12,color:'#888'}}>{s.l}</span>
-              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><i className={`ti ${s.i}`} style={{fontSize:15,color:'#FC6D26'}}/><span style={{fontSize:12,color:'#888'}}>{s.l}</span></div>
               <span style={{fontSize:22,fontWeight:700}}>{s.v}</span>
             </div>
           ))}
@@ -369,23 +321,17 @@ export default function App() {
                 </div>
                 <div style={{padding:10,display:'flex',flexDirection:'column',gap:7,minHeight:100}}>
                   {board.cards[col.id].map(card=>(
-                    <CardItem key={card.id} card={card} col={col}
-                      votes={board.votes} reactions={board.reactions} comments={board.comments}
-                      commentInput={commentInput} expandedCard={expandedCard} creatingIssue={creatingIssue}
-                      onVote={()=>toggleVote(card.id)} onReact={e=>addReaction(card.id,e)}
-                      onDelete={()=>deleteCard(col.id,card.id)}
+                    <CardItem key={card.id} card={card} col={col} votes={board.votes} reactions={board.reactions} comments={board.comments} commentInput={commentInput} expandedCard={expandedCard} creatingIssue={creatingIssue} userName={userName}
+                      onVote={()=>toggleVote(card.id)} onReact={e=>addReaction(card.id,e)} onDelete={()=>deleteCard(col.id,card.id)}
                       onExpand={()=>setExpandedCard(expandedCard===card.id?null:card.id)}
-                      onCommentChange={v=>setCommentInput(p=>({...p,[card.id]:v}))}
-                      onAddComment={()=>addComment(card.id)}
-                      onCreateIssue={()=>createGitlabIssue(col.id,card)}
-                      onUpdate={u=>updateCard(col.id,card.id,u)}
+                      onCommentChange={v=>setCommentInput(p=>({...p,[card.id]:v}))} onAddComment={()=>addComment(card.id)}
+                      onCreateIssue={()=>createGitlabIssue(col.id,card)} onUpdate={u=>updateCard(col.id,card.id,u)}
                       onMarkAction={()=>updateCard(col.id,card.id,{isActionItem:!card.isActionItem})}
-                      userName={userName}
                     />
                   ))}
                   <div style={{display:'flex',gap:5,marginTop:2}}>
                     <input value={newText[col.id]||''} onChange={e=>setNewText(p=>({...p,[col.id]:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&addCard(col.id)} placeholder="Add a card…" style={{flex:1,fontSize:12,padding:'6px 9px'}}/>
-                    <button onClick={()=>addCard(col.id)} style={{padding:'6px 10px'}} aria-label="Add"><i className="ti ti-plus" style={{fontSize:13}}/></button>
+                    <button onClick={()=>addCard(col.id)} style={{padding:'6px 10px'}}><i className="ti ti-plus" style={{fontSize:13}}/></button>
                   </div>
                 </div>
               </div>
@@ -404,8 +350,7 @@ export default function App() {
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 {allActions.map(card=>(
                   <ActionRow key={card.id} card={card} col={COLUMNS.find(c=>c.id===card.colId)} creatingIssue={creatingIssue}
-                    onCreateIssue={()=>createGitlabIssue(card.colId,card)}
-                    onUpdate={u=>updateCard(card.colId,card.id,u)}
+                    onCreateIssue={()=>createGitlabIssue(card.colId,card)} onUpdate={u=>updateCard(card.colId,card.id,u)}
                   />
                 ))}
               </div>
@@ -418,10 +363,7 @@ export default function App() {
             <div style={{background:'#fff',borderRadius:12,padding:'1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:12}}>
               <h2 style={{fontSize:17,fontWeight:700,marginBottom:4}}>{board.name}</h2>
               <p style={{fontSize:13,color:'#666',marginBottom:10}}>{board.desc}</p>
-              <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
-                <Badge bg="#fff5f0" color="#b84800">{board.sprintTag}</Badge>
-                <Badge bg="#f4f5f7" color="#555">{new Date().toLocaleDateString()}</Badge>
-              </div>
+              <div style={{display:'flex',gap:7}}><Badge bg="#fff5f0" color="#b84800">{board.sprintTag}</Badge><Badge bg="#f4f5f7" color="#555">{new Date().toLocaleDateString()}</Badge></div>
             </div>
             {COLUMNS.map(col=>(
               <div key={col.id} style={{background:'#fff',borderRadius:12,padding:'1rem 1.25rem',border:'1px solid rgba(0,0,0,0.07)',marginBottom:10}}>
@@ -433,16 +375,15 @@ export default function App() {
                 {board.cards[col.id].length===0 ? <p style={{fontSize:13,color:'#aaa'}}>No items</p> : (
                   <ul style={{paddingLeft:18,display:'flex',flexDirection:'column',gap:6}}>
                     {board.cards[col.id].map(c=>(
-                      <li key={c.id} style={{fontSize:13,lineHeight:1.5}}>
-                        {c.text} <span style={{fontSize:11,color:'#aaa'}}>— {c.author}</span>
-                        {c.gitlabIssueUrl && <a href={c.gitlabIssueUrl} target="_blank" rel="noopener" style={{marginLeft:8,fontSize:12}}> #{c.gitlabIssueId} <i className="ti ti-external-link" style={{fontSize:10}}/></a>}
+                      <li key={c.id} style={{fontSize:13,lineHeight:1.5}}>{c.text} <span style={{fontSize:11,color:'#aaa'}}>— {c.author}</span>
+                        {c.gitlabIssueUrl && <a href={c.gitlabIssueUrl} target="_blank" rel="noopener" style={{marginLeft:8,fontSize:12}}>#{c.gitlabIssueId}</a>}
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
             ))}
-            <button onClick={saveSummaryToGitlab} disabled={savingBoard} style={{width:'100%',padding:'11px',fontSize:14,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10}}>
+            <button onClick={saveSummary} disabled={savingBoard} style={{width:'100%',padding:'11px',fontSize:14,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'#FC6D26',color:'#fff',border:'none',borderRadius:10}}>
               <GitLabLogo size={16}/>{savingBoard?'Saving…':'Save summary to GitLab'}
             </button>
           </div>
@@ -458,7 +399,6 @@ function CardItem({ card, col, votes, reactions, comments, commentInput, expande
   const cr = reactions[card.id]||{};
   const cc = comments[card.id]||[];
   const EMOJIS = ['👍','❤️','💡','🎉','🤔'];
-  const canDelete = card.author===userName;
   return (
     <div style={{background:'#fff',borderRadius:8,border:'1px solid rgba(0,0,0,0.08)',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
       <div style={{padding:'9px 11px'}}>
@@ -472,7 +412,7 @@ function CardItem({ card, col, votes, reactions, comments, commentInput, expande
           <div style={{display:'flex',gap:3}}>
             <button onClick={onVote} style={{fontSize:11,padding:'2px 8px',display:'flex',alignItems:'center',gap:3}}><i className="ti ti-arrow-up" style={{fontSize:11}}/>{vc}</button>
             <button onClick={onExpand} style={{fontSize:11,padding:'2px 8px'}}><i className={`ti ${isExp?'ti-chevron-up':'ti-chevron-down'}`} style={{fontSize:11}}/></button>
-            {canDelete && <button onClick={onDelete} style={{fontSize:11,padding:'2px 8px',color:'#e74c3c'}}><i className="ti ti-trash" style={{fontSize:11}}/></button>}
+            {card.author===userName && <button onClick={onDelete} style={{fontSize:11,padding:'2px 8px',color:'#e74c3c'}}><i className="ti ti-trash" style={{fontSize:11}}/></button>}
           </div>
         </div>
         {Object.keys(cr).length>0 && (
